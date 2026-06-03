@@ -1,0 +1,8 @@
+node_modules/
+elm-stuff/
+dist/
+.elm-pages/
+functions/
+
+.direnv
+.zed
