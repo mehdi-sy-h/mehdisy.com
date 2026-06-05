@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@plugin "@tailwindcss/typography";
+
 @theme {
   --font-serif: "Lora", serif;
   --font-sans: "Fira Sans", sans-serif;
@@ -9,7 +11,7 @@
 
 @layer base {
   html {
-    @apply antialiased font-sans bg-gray-950 text-white;
+    @apply antialiased font-sans bg-gray-950 /*text-white*/;
   }
 
   /* Prevent <pre> elements from overflowing their parents */
@@ -23,11 +25,11 @@
   h4,
   h5,
   h6 {
-    @apply font-heading font-normal text-balance;
+    @apply font-heading /*font-normal text-balance*/;
   }
 
   p {
-    @apply leading-7 text-pretty;
+    /*@apply leading-8 text-pretty;*/
   }
 
   a {

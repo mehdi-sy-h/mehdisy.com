@@ -1,19 +1,20 @@
 ---
-title: DWARF Line Number Information
-published: *TODO*
-author: Mehdi Hassan
-description: *TODO*
-tags:
-  - debuggers
-  - *TODO*
-series: Write your own debugger from scratch
+{
+  "title": "dabugger",
+  "published": "2026-06-05",
+  "author": "Mehdi Hassan",
+  "tags": [ "debuggers" ],
+  "series": "Write your own debugger from scratch"
+}
 ---
 
 # dabugger - writing a debugger from scratch as my first C project
 
-##### *This article was written by a human.*
+#### *This article was written by a human.*
 
-**TODO: Move to bottom, this article is not a series but mention that you might write one if people are interested.**
+<!--
+TODO: Move to bottom, this article is not a series but mention that you might write one if people are interested.
+-->
 
 Welcome to this series on writing your own debugger from scratch, in C, for x86-64 Linux executables. The only third party libraries we will be using are glibc, [zydis]() for disassembly, and [ncurses]() for the TUI.
 
@@ -23,7 +24,7 @@ Welcome to this series on writing your own debugger from scratch, in C, for x86-
 
 ### Motivation
 
-Roughly two months ago I wanted to debug my STM32 blue pill I had bought to dip my toes into embedded programming. I plugged in my ST-Link and started a remote session with GDB. Everything seemed to be working until I switched to the TUI assembly view with `tui layout asm`. I could scroll down the list of assembly instructions, but I couldn't scroll up! On top of that, occassionally the TUI wouldn't refresh correctly and half the screen would show one thing and the other half would show another. I experience frame tearing all the time when playing games but I did not expect it on a TUI of all things *(although given how bloated these new TUI based LLM agents are perhaps I now can)*. I had searched the internet for a while to see if it was something I could resolve but all I could find was [this](https://stackoverflow.com/questions/26572805/gdb-tui-scroll-assembly-view-above-current-instruction#26603663) currently 7 year old stackoverflow post suggesting that you continually enter the disassemble command at a previous address, and a comment recommending you use a GDB frontend.
+Roughly two months ago I wanted to debug my STM32 blue pill I had bought to dip my toes into embedded programming. I plugged in my ST-Link and started a remote session with GDB. Everything seemed to be working until I switched to the TUI assembly view with `tui layout asm`. I could scroll down the list of assembly instructions, but I couldn't scroll up! On top of that, occassionally the TUI wouldn't refresh correctly and half the screen would show one thing and the other half would show another. I experience frame tearing all the time when playing games but I did not expect it on a TUI of all things... although given how bloated these new TUI based LLM agents are perhaps I now can. I had searched the internet for a while to see if it was something I could resolve but all I could find was [this](https://stackoverflow.com/questions/26572805/gdb-tui-scroll-assembly-view-above-current-instruction#26603663) currently 7 year old stackoverflow post suggesting that you continually enter the disassemble command at a previous address, and a comment recommending you use a GDB frontend.
 
 Admittedly you're *expected* to use the CLI for GDB, but it doesn't really excuse the fact that the de-facto standard for Linux debuggers has a TUI thats buggy and awkward to use to this day. Also, as a novice user, I don't want to comb through help commands to do something as simple as setting breakpoints, retrieving the value of a register or executing the debuggee (which I imagine is the extent of what people wish to do in the majority of cases where print debugging is insufficient). Rarely do I use any debugging features more complicated than this, but when I need them then I am willing to spend more time to learn the tool and bare the friction. In most cases, however, my attention is solely focused on fixing my program, not learning the quirks of my debugger. Finally, while I can attest to how efficient CLIs can be for other tools, a debugger is undoubtedly something that benefits from a more visually expressive interface- be it a TUI or a GUI.
 
