@@ -11,12 +11,13 @@
 
 @layer base {
   html {
-    @apply antialiased font-sans bg-gray-950 /*text-white*/;
+    @apply antialiased font-sans /*bg-stone-950*/ bg-mist-950 /*text-white*/;
   }
 
   /* Prevent <pre> elements from overflowing their parents */
   pre {
     contain: inline-size;
+    max-height: 100vh;
   }
 
   h1,

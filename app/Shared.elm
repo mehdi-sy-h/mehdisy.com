@@ -94,9 +94,9 @@ view :
     -> { body : List (Html msg), title : String }
 view sharedData page model toMsg pageView =
     { body =
-        [ Html.nav [ Attrs.class "flex place-items-end mx-auto px-4 py-3 justify-between max-w-xl" ]
-            [ Html.h1 [ Attrs.class "text-3xl text-teal-600" ] [ Html.text "Mehdi Hassan" ]
-            , Html.div [ Attrs.class "flex gap-x-8 text-xl font-sans *:hover:text-teal-600 text-white" ]
+        [ Html.nav [ Attrs.class "flex place-items-center top-0 sticky z-50 bg-mist-950/70 b-stone-950/70 backdrop-blur-sm mx-auto py-3 justify-between max-w-2xl" ]
+            [ Html.h1 [ Attrs.class "text-3xl tex-amber-600 text-mist-300" ] [ Html.text "Mehdi Hassan" ]
+            , Html.div [ Attrs.class "flex gap-x-8 text-xl font-sans *:hover:text-amber-600 text-white" ]
                 [ Html.button [] [ Html.text "About" ]
                 , Html.button [] [ Html.text "Blog" ]
                 ]

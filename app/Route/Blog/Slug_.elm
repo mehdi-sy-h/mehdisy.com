@@ -116,25 +116,27 @@ view :
 view app sharedModel =
     { title = app.data.title
     , body =
-        [ Html.div [ Attrs.class "prose md:prose-lg lg:prose-xl prose-invert mx-auto mt-5" ]
-            [ case
-                app.data.body
-                    |> Markdown.Parser.parse
-                    |> Result.mapError deadEndsToString
-                    |> Result.andThen (\ast -> Markdown.Renderer.render Markdown.Renderer.defaultHtmlRenderer ast)
-              of
-                Ok rendered ->
-                    Html.div [] rendered
-
-                Err errors ->
-                    Html.text errors
-            ]
+        [ View.freeze
+            (Html.div []
+                [ Html.main_ [ Attrs.class "prose prose-stone md:prose-lg lg:prose-xl lg:max-w-2xl prose-invert mx-auto mt-5" ]
+                    (app.data.body
+                        |> Markdown.Parser.parse
+                        |> Result.mapError
+                            (\deadEnds ->
+                                deadEnds
+                                    |> List.map Markdown.Parser.deadEndToString
+                                    |> String.join "\n"
+                            )
+                        |> Result.andThen
+                            (\ast ->
+                                Markdown.Renderer.render Markdown.Renderer.defaultHtmlRenderer ast
+                            )
+                        |> Result.withDefault []
+                    )
+                ]
+            )
         ]
     }
-
-
-deadEndsToString deadEnds =
-    deadEnds |> List.map Markdown.Parser.deadEndToString |> String.join "\n"
 
 
 type alias BlogpostMetadata =
