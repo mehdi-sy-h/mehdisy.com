@@ -8,11 +8,13 @@
 }
 ---
 
-# dabugger - writing a debugger from scratch as my first C project
+# dabugger - writing my own debugger from scratch in C
 
 #### *This article was written by a human.*
 
-I've been working on `dabugger`, an x86-64 debugger for Linux ELF + DWARF executables. The only third party libraries I used are glibc, [zydis]() for disassembly, and [ncurses]() for the TUI. This article is a summary of my journey working on this project. The order of topics may seem atypical but this is roughly the actual implementation order. If anyone is interested, I may also write a more detailed tutorial style series.
+I've been working on `dabugger`, an x86-64 debugger for Linux ELF + DWARF executables. The only third party libraries I used are glibc, [zydis]() for disassembly, and [ncurses]() for the TUI. This article is a summary of my journey working on this project. The order of topics may seem atypical but this is roughly the actual implementation order. 
+
+<!--If anyone is interested, I may also write a more detailed tutorial style series.-->
 
 **Please note that I am not an expert**. In fact I am not even a professional software developer (though [I am looking for a graduate or entry level role](https://www.linkedin.com/in/mehdi-syed-hassan/)). I've tried to include accurate information as much as I can, and I started writing this article after I got the debugger to a functional state, so that I have the benefit of hindsight.
 
@@ -34,8 +36,7 @@ It turns out writing your own debugger "from scratch" is actually not too hard! 
 
 - Variable inspection
 - Conditional breakpoints
-- Proper step into/step out of function execution
-- Other fancier features
+- Fancier features that rely heavily on source code constructs
 
 However, `dabugger` **does currently support**:
 
@@ -46,7 +47,7 @@ However, `dabugger` **does currently support**:
 - Displaying the debuggee's output
 - Inspecting the debuggee's registers
 
-Personally I would *love* to have included variable inspection, and perhaps also "step into/out". The rationale behind skipping the former features and keeping the latter ones is primarily down to this: DWARF is quite complicated!
+Personally I would *love* to have included variable inspection in particular. The rationale behind skipping the former features and keeping the latter ones is primarily down to this: DWARF is quite complicated!
 
 DWARF is the debugging format used in the ELF binaries of modern Linux programs, under the various `.debug_*` sections. Most of the debug information lives within the `.debug_info` section, though it references some of the other debug sections. This section contains a tree of DIEs (an acronym for Debugging Information Entry). Each DIE represents a part of the program: variables, constants, types, functions, etc. Naturally some DIEs refer to others (for example, a variable DIE referring to a type DIE), and some DIEs are composed of nested children. For more information, [here](https://dwarfstd.org/doc/Debugging%20using%20DWARF-2012.pdf) is the official introduction to DWARF. Its a short read at 11 pages.
 
@@ -54,13 +55,6 @@ Alas, the actual [DWARF 5 standard]() (as of the time of writing, the latest ver
 
 After reading the previously mentioned introduction, I found a tractable middle ground to writing something decently useful. The `.debug_line` section contains the DWARF information for the mapping from source lines to the most relevant machine instructions. Only ~20 pages of the DWARF 5 specification is dedicated to parsing this section. Since DWARF 5, this section is also mostly self contained, so we don't have to touch the DIE tree at all. Parsing this allows us to introduce a very useful feature: **source line breakpoints**.
 
-<!--
-TODO: Move to dwarf section?
-
-The mapping from source lines to machine instructions is not a one to one correspondence. A source line could be related to multiple, non-contiguous machine instructions, and more than one source line could refer to the same instruction. Also, this mapping isn't order preserving- subsequent source lines could refer to previous machine instructions. Finally, especially at higher optimization levels, a suitable mapping is not always clear (due to instruction pipelining and other techniques employed by modern instruction set architectures). Fortunately, compilers produce this mapping for us when we pass `-g`, with more sensical results at the `-Og` or `-O0`optimization levels.
-
-A DWARF consumer (our debugger), after parsing the `.debug_line` section, *eventually* ends up with a set of matrix representations of this mapping. Each matrix would contain the line information for a given compilation unit involved in building the debuggee executable. Once we have a suitable address for a source line, we can insert a breakpoint there with `ptrace()`. I will discuss the structure of this matrix and how to parse this section, which is not in matrix form out of the box, later on in the article.
--->
 All in all, this being my first C project and after just ~3k lines of code, I'd say this endeavour went pretty well and its actually kind of useable.
 
 <!--*TODO: Only include this section once you can figure the bug out properly.*
@@ -286,7 +280,30 @@ You may find the full ELF parser code [here](). Now that we've obtained what we 
 
 ## Parsing DWARF Line Number Information
 
+As alluded to in the introduction, the `.debug_line` section contains mappings of machine instructions to source locations. 
+
+The mapping from source lines to machine instructions is not a one to one correspondence. A source line could be related to multiple, non-contiguous machine instructions, and more than one source line could refer to the same instruction. Also, this mapping isn't order preserving- subsequent source lines could refer to previous machine instructions. Finally, especially at higher optimization levels, a suitable mapping is not always clear (due to instruction pipelining and other techniques employed by modern instruction set architectures). Fortunately, compilers produce this mapping for us when we pass `-g`, with more sensical results at the `-Og` or `-O0`optimization levels.
+
+A DWARF consumer (our debugger), after parsing the `.debug_line` section, *eventually* ends up with a set of matrix representations of this mapping. Each matrix would contain the line information for a given compilation unit involved in building the debuggee executable. There would be one row per machine instruction, containing information like the instruction address, the source file name, line and column number, whether it is the beginning of a source statement, etc. Once we have a suitable address for a source line, we can insert a breakpoint there with `ptrace`. This also allows us to step by source line, rather than only by machine instruction. *(Reference: DWARF 5 Specification, Page 149)*
+
+However, `.debug_line` does not contain the line number information in its matrix representation out of the box. Storing such a matrix directly, particularly since many values are duplicated from row to row, is extremely space inefficient. Instead, the line number information is encoded as a byte-coded instruction stream that is interpreted using a state machine.
+
+The binary data in `.debug_line` is structured as a series of **line number programs**, each preceded by a **line number program header**. Each line number program contains the bytecode instruction stream encoding the line number information for a particular compilation unit. The header for each line number program contains valuable metadata about how to decode it. 
+
 ### LEB128 Decoding
+The line number programs and their headers use the [LEB128]() (Little Endian Base 128) format for some of the integer values. Thus, as an aside, we will discuss how to decode LEB128 and why it is used.
+
+### Line Number Program Headers
+
+### Decoding a Line Number Program
+
+### Relevant Tooling
+
+#### `gcc`
+
+#### `dwarfdump`
+
+#### `readelf`
 
 ## Designing the Terminal User Interface
 
