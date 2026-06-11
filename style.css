@@ -17,7 +17,7 @@
   /* Prevent <pre> elements from overflowing their parents */
   pre {
     contain: inline-size;
-    max-height: 100vh;
+    max-height: 70vh;
   }
 
   h1,

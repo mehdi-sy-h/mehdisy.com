@@ -118,7 +118,7 @@ view app sharedModel =
     , body =
         [ View.freeze
             (Html.div []
-                [ Html.main_ [ Attrs.class "prose prose-stone md:prose-lg lag:prose-xl lg:max-w-2xl prose-invert mx-auto mt-5" ]
+                [ Html.main_ [ Attrs.class "prose prose-stone md:prose-lg lag:prose-xl lg:max-w-3xl prose-invert mx-auto mt-5" ]
                     (app.data.body
                         |> Markdown.Parser.parse
                         |> Result.mapError
