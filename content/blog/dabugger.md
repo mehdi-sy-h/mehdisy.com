@@ -14,8 +14,6 @@
 
 I've been working on `dabugger`, an x86-64 debugger for Linux ELF + DWARF executables. The only third party libraries I used are glibc, [zydis]() for disassembly, and [ncurses]() for the TUI. This article is a summary of my journey working on this project. The order of topics may seem atypical but this is roughly the actual implementation order. 
 
-<!--If anyone is interested, I may also write a more detailed tutorial style series.-->
-
 **Please note that I am not an expert**. In fact I am not even a professional software developer (though [I am looking for a graduate or entry level role](https://www.linkedin.com/in/mehdi-syed-hassan/)). I've tried to include accurate information as much as I can, and I started writing this article after I got the debugger to a functional state, so that I have the benefit of hindsight.
 
 ## Introduction
@@ -56,71 +54,6 @@ Alas, the actual [DWARF 5 standard]() (as of the time of writing, the latest ver
 After reading the previously mentioned introduction, I found a tractable middle ground to writing something decently useful. The `.debug_line` section contains the DWARF information for the mapping from source lines to the most relevant machine instructions. Only ~20 pages of the DWARF 5 specification is dedicated to parsing this section. Since DWARF 5, this section is also mostly self contained, so we don't have to touch the DIE tree at all. Parsing this allows us to introduce a very useful feature: **source line breakpoints**.
 
 All in all, this being my first C project and after just ~3k lines of code, I'd say this endeavour went pretty well and its actually kind of useable.
-
-<!--*TODO: Only include this section once you can figure the bug out properly.*
-
-## Build Configuration
-
-I used CMake for this project, `CMakeLists.txt` [here](). Since I daily drive NixOS, I've also written a simple `flake.nix` [here](). Below are particularly relevant parts of the configuration.
-
-```cmake
-#...
-set(CMAKE_C_STANDARD 23)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS ON)
-
-#...
-
-add_compile_options(
-  # ...
-  -gdwarf64
-  -fno-pie
-)
-
-#...
-
-target_link_options(${PROJECT_NAME} PRIVATE -no-pie)
-
-target_compile_options(${PROJECT_NAME} PRIVATE
-  $<$<CONFIG:Debug>:-g3 -Og>
-  $<$<CONFIG:Release>:-O2 -DNDEBUG>
-  $<$<C_COMPILER_ID:GNU>:-gno-as-loc-support>
-)
-
-#...
-```
-
-Funnily enough, it was while I was setting up my build configuration that I ran into my first problem. Initially I had enabled ASAN and UBSAN and compiled a Hello World program. I wanted to get my project and Nix devshell set up, and also wanted to become more familiar with gdb. If you checkout my [initial commit](), compile the hello world program and run it through gdb, you will come across this error:
-
-```
-Reading symbols from build/dabugger...
-(gdb) start
-Temporary breakpoint 1 at 0x1188: file /home/me/Source/dabugger/src/dabugger.c, line 6.
-Starting program: /home/me/Source/dabugger/build/dabugger 
-[Thread debugging using libthread_db enabled]
-Using host libthread_db library "/nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libthread_db.so.1".
-
-Temporary breakpoint 1, main (argc=1, argv=0x7fffffffa048) at /home/me/Source/dabugger/src/dabugger.c:6
-6		printf("Hello, world!\n");
-(gdb) n
-Hello, world!
-7		return EXIT_SUCCESS;
-(gdb) n
-8	}
-(gdb) n
-0x00007ffff6c2b285 in __libc_start_call_main ()
-   from /nix/store/l0l2ll1lmylczj1ihqn351af2kyp5x19-glibc-2.42-51/lib/libc.so.6
-(gdb) n
-Single stepping until exit from function __libc_start_call_main,
-which has no line number information.
-==60278==LeakSanitizer has encountered a fatal error.
-==60278==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1
-==60278==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)
-[Inferior 1 (process 60278) exited with code 01]
-```
-
-The hint seems to be pretty clear, LeakSanitizer does not work under ptrace. The `ptrace(2)` man page clearly states that ...*TODO: verify?*. However, having just tested this against the latest `dabugger` commit (which of course uses `ptrace()`), I don't appear to run into this issue? Why does it happen under `gdb` but not my `dabugger`? Unfortunately I could not find a conclusive reason for this online. 
--->
 
 ## Parsing ELF Binaries
 
@@ -284,22 +217,181 @@ As alluded to in the introduction, the `.debug_line` section contains mappings o
 
 The mapping from source lines to machine instructions is not a one to one correspondence. A source line could be related to multiple, non-contiguous machine instructions, and more than one source line could refer to the same instruction. Also, this mapping isn't order preserving- subsequent source lines could refer to previous machine instructions. Finally, especially at higher optimization levels, a suitable mapping is not always clear (due to instruction pipelining and other techniques employed by modern instruction set architectures). Fortunately, compilers produce this mapping for us when we pass `-g`, with more sensical results at the `-Og` or `-O0`optimization levels.
 
-A DWARF consumer (our debugger), after parsing the `.debug_line` section, *eventually* ends up with a set of matrix representations of this mapping. Each matrix would contain the line information for a given compilation unit involved in building the debuggee executable. There would be one row per machine instruction, containing information like the instruction address, the source file name, line and column number, whether it is the beginning of a source statement, etc. Once we have a suitable address for a source line, we can insert a breakpoint there with `ptrace`. This also allows us to step by source line, rather than only by machine instruction. *(Reference: DWARF 5 Specification, Page 149)*
+A DWARF consumer (our debugger), after parsing the `.debug_line` section, *eventually* ends up with a set of matrix representations of this mapping. Each matrix would contain the line information for a given compilation unit involved in building the debuggee executable. There would be one row per machine instruction, containing information like the instruction address, the source file name, line and column number, whether it is a recommended breakpoint location, etc. Once we have a suitable address for a source line, we can insert a breakpoint there with `ptrace`. This also allows us to step by source line, rather than only by machine instruction. *(Reference: DWARF 5 Specification, Page 149)*
 
 However, `.debug_line` does not contain the line number information in its matrix representation out of the box. Storing such a matrix directly, particularly since many values are duplicated from row to row, is extremely space inefficient. Instead, the line number information is encoded as a byte-coded instruction stream that is interpreted using a state machine.
 
 The binary data in `.debug_line` is structured as a series of **line number programs**, each preceded by a **line number program header**. Each line number program contains the bytecode instruction stream encoding the line number information for a particular compilation unit. The header for each line number program contains valuable metadata about how to decode it. 
 
 ### LEB128 Decoding
-The line number programs and their headers use the [LEB128]() (Little Endian Base 128) format for some of the integer values. Thus, as an aside, we will discuss how to decode LEB128 and why it is used.
+The line number programs and their headers use the [LEB128](https://en.wikipedia.org/wiki/LEB128) (Little Endian Base 128) format for some of the integer values. As an aside, we will discuss how to deal with LEB128 and why it is used here.
+
+The following example is taken from the [LEB128 Wikipedia page](https://en.wikipedia.org/wiki/LEB128), and illustrates the process for *encoding* an *unsigned number* as unsigned LEB128 (ULEB128).
+
+```
+Encoding the unsigned number 624485 as ULEB128:
+MSB ------------------ LSB
+      10011000011101100101  In raw binary
+     010011000011101100101  Padded to a multiple of 7 bits
+ 0100110  0001110  1100101  Split into 7-bit groups
+00100110 10001110 11100101  Add high 1 bits on all but last (most significant) group to form bytes
+    0x26     0x8E     0xE5  In hexadecimal
+
+→ 0xE5 0x8E 0x26            Output stream (LSB to MSB)
+```
+
+Likewise, here is the Wikipedia example for encoding a signed number as signed LEB128.
+
+```
+MSB ------------------ LSB
+         11110001001000000  Binary encoding of 123456
+     000011110001001000000  As a 21-bit number
+     111100001110110111111  Negating all bits (ones' complement)
+     111100001110111000000  Adding one (two's complement)
+ 1111000  0111011  1000000  Split into 7-bit groups
+01111000 10111011 11000000  Add high 1 bits on all but last (most significant) group to form bytes
+    0x78     0xBB     0xC0  In hexadecimal
+
+→ 0xC0 0xBB 0x78            Output stream (LSB to MSB)
+```
+
+The DWARF 5 Standard, Appendix C, also has some examples on how to encode and decode LEB128.
+
+Since we're writing a DWARF consumer, we only need to decode LEB128. We don't need to write any code to encode LEB128, but I included the above examples for pedagogical reasons. All we have to do is perform the steps in reverse. I've written a reader library in `dabugger` to contain the decoder functions, so that parsing binary formats is convenient and so that I can extend it with other reader functions. Here is what the relevant parts look like:
+
+[`reader.h`]()
+```c
+#ifndef DABUGGER_READER_H
+#define DABUGGER_READER_H
+
+#include <stdint.h>
+#include <stdlib.h>
+
+typedef struct {
+    const uint8_t *cursor;
+    size_t remaining;
+} BinaryReader;
+
+typedef enum {
+    READ_OK = 0,
+    READ_ERR_OUT_OF_BOUNDS,
+    READ_ERR_LEB_U64_OVERFLOW,
+    READ_ERR_LEB_I64_OVERFLOW
+} ReadStatus;
+
+typedef struct {
+    size_t bytes_consumed;
+    ReadStatus status;
+} ReadResult;
+
+/* ... */
+
+extern ReadResult read_bytes(BinaryReader *reader, void *out, size_t bytes);
+
+/* ... */
+
+extern ReadResult read_uleb128(BinaryReader *reader, uint64_t *out);
+
+extern ReadResult read_sleb128(BinaryReader *reader, int64_t *out);
+
+/* ... */
+
+#endif /* DABUGGER_READER_H */
+```
+
+[`reader.c`]()
+```c
+#include "reader.h"
+
+/* ... */
+
+ReadResult read_bytes(BinaryReader *reader, void *out, size_t bytes) {
+    const uint8_t *current_cursor = reader->cursor;
+
+    ReadResult result = advance_reader(reader, bytes);
+    if (result.status != READ_OK)
+        return result;
+
+    memcpy(out, current_cursor, bytes);
+    return result;
+}
+
+/* ... */
+
+ReadResult read_uleb128(BinaryReader *reader, uint64_t *out) {
+    ReadResult result = {0};
+    uint8_t byte;
+    *out = 0;
+    do {
+        if (result.bytes_consumed == 10) {
+            result.status = READ_ERR_LEB_U64_OVERFLOW;
+            return result;
+        }
+
+        ReadResult byte_read_result = read_bytes(reader, &byte, 1);
+
+        if (byte_read_result.status != READ_OK) {
+            result.status = byte_read_result.status;
+            return result;
+        }
+
+        *out |= (uint64_t)(byte & 0x7f) << ((result.bytes_consumed) * 7);
+        result.bytes_consumed++;
+    } while ((byte & 0x80) != 0);
+    return result;
+}
+
+ReadResult read_sleb128(BinaryReader *reader, int64_t *out) {
+    ReadResult result = {0};
+    uint8_t byte;
+    *out = 0;
+    do {
+        if (result.bytes_consumed == 10) {
+            result.status = READ_ERR_LEB_I64_OVERFLOW;
+            return result;
+        }
+
+        ReadResult byte_read_result = read_bytes(reader, &byte, 1);
+
+        if (byte_read_result.status != READ_OK) {
+            result.status = byte_read_result.status;
+            return result;
+        }
+        *out |= (int64_t)(byte & 0x7f) << ((result.bytes_consumed) * 7);
+        result.bytes_consumed++;
+    } while ((byte & 0x80) != 0);
+
+    if ((result.bytes_consumed * 7 < sizeof(int64_t) * CHAR_BIT) &&
+        ((byte & 0x40) != 0)) {
+        *out |= -((int64_t)1 << (result.bytes_consumed * 7));
+    }
+
+    return result;
+}
+
+/* ... */
+```
+
+DWARF, along with WebAssembly and even Minecraft and osu! use LEB128 to compress integers. The Wikipedia article uses the phrase "arbitrarily large integers", which when I first read it, confused me quite a lot. Firstly, how is this a useful compression scheme for arbitrarily large integers, when it is always at least as large as the original data? Secondly, why does DWARF need to encode arbitrarily large integers, when the only numbers you would be dealing with in debug information has size up to `sizeof(size_t)` of the target architecture? The Wikipedia article unfortunately does not make this clear but after working through my DWARF parser I understood why.
+
+As for the second question, I read [LLVM's binary reader](https://github.com/llvm/llvm-project/blob/240539f1c1ba5f72ce5879807ed1a6dd5b694ef5/llvm/lib/Support/BinaryStreamReader.cpp#L43), which they also use as a utility to parse DWARF, among other things. As you can see, they use a reference to a `uint64_t` as their output parameter. If LLVM does it this way, then I rest assured that I don't have to implement some BigInt library in C because DWARF *probably* won't require me to parse integers larger than 8 bytes (though as far as I know, the specification does not impose this explicitly).
+
+As for the first question, the utility of this compression scheme lies in how it saves space for small integers. Suppose you have some integral data, the range of which can be large (even arbitrarily large). However, most of the instances of this data in practice are small. You want to keep the flexibility of having a large range of possible values, but you want to save some space because most of the time you encounter small integers rather than massive ones. LEB128 is a great fit for this. Rather than requiring say, `uint64_t` all the time, you could just use LEB128 and the small values will take up a small number of bytes, as if you had used a smaller integer type, and large values would take up requisite space accordingly.
+
+We will soon see that for our parser, in most cases we will be dealing with small numbers (eg. increment a register by a small value), but on occasion we will need to parse a big one (eg. a fixed absolute address to jump to).
 
 ### Line Number Program Headers
 
+<!-- TODO -->
+
 ### Decoding a Line Number Program
+
+<!-- TODO -->
 
 ### Relevant Tooling
 
-#### `gcc`
+<!-- TODO: Embed this in the content instead? -->
+#### `gcc` & `clang`
 
 #### `dwarfdump`
 
@@ -307,9 +399,21 @@ The line number programs and their headers use the [LEB128]() (Little Endian Bas
 
 ## Designing the Terminal User Interface
 
+I used `ncurses` for the TUI. Its part of the GNU project and comes packaged with most Linux distros. The API is quite simple and provides enough features that I needed. I was contemplating whether to use `notcurses`, which is newer, but I didn't really need the features it introduces.
+
+We have five windows in the interface, one of which is a popup menu:
+
+- File picker window: This is a popup menu which lets you choose which compilation unit referenced by the debug line information you want to view and set breakpoints on.
+- Source window: 
+- Assembly window: 
+- Output window:
+- Registers window:
+
 ### The Elm Architecture (Model/View/Update)
 
 ## Debuggee Control
+
+### Handling Position Independent Executables
 
 `ptrace`
 
